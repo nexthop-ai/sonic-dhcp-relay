@@ -436,6 +436,20 @@ const struct dhcpv6_relay_msg *parse_dhcpv6_relay(const uint8_t *buffer);
 void update_vlan_mapping(std::string vlan, std::shared_ptr<swss::DBConnector> cfgdb);
 
 /**
+ * @code                vlan_member_config_callback(evutil_socket_t fd, short event, void *arg);
+ *
+ * @brief               libevent callback fired when the VLAN_MEMBER CONFIG_DB subscription has data;
+ *                      drains and applies member add/del to interface_map.
+ *
+ * @param fd            redis subscription socket
+ * @param event         libevent triggered event
+ * @param arg           pointer to dynamic_config_ctx
+ *
+ * @return              none
+ */
+void vlan_member_config_callback(evutil_socket_t fd, short event, void *arg);
+
+/**
  * @code                client_callback(evutil_socket_t fd, short event, void *arg);
  *
  * @brief               callback for libevent that is called everytime data is received at the filter socket

@@ -184,9 +184,70 @@ void processRelayNotification(std::deque<swss::KeyOpFieldsValuesTuple> &entries,
 }
 
 /**
+<<<<<<< HEAD
  * @code                    bool check_is_lla_ready(std::string vlan)
  * 
  * @brief                   Check whether link local address appear in vlan interface
+=======
+ * @code                    void processVlanMemberNotification(std::deque<swss::KeyOpFieldsValuesTuple> &entries,
+ *                                                             std::unordered_map<std::string, relay_config> &interfaces)
+ *
+ * @brief                   process VLAN_MEMBER add/del notifications and keep the member-port -> VLAN
+ *                          interface_map in sync at runtime.
+ *
+ * @param entries           queue of VLAN_MEMBER table change entries (key form "<Vlan>|<member>")
+ * @param interfaces        map of relay interface configs keyed by VLAN name
+ *
+ * @return                  none
+ */
+void processVlanMemberNotification(std::deque<swss::KeyOpFieldsValuesTuple> &entries,
+                                   std::unordered_map<std::string, relay_config> &interfaces)
+{
+    for (auto &entry : entries) {
+        std::string key = kfvKey(entry);
+        std::string operation = kfvOp(entry);
+
+        auto pos = key.find('|');
+        if (pos == std::string::npos) {
+            syslog(LOG_WARNING, "Invalid VLAN_MEMBER key format: %s", key.c_str());
+            continue;
+        }
+        std::string vlan = key.substr(0, pos);
+        std::string member = key.substr(pos + 1);
+
+        if (operation == "DEL") {
+            auto it = interface_map.find(member);
+            if (it != interface_map.end() && it->second == vlan) {
+                interface_map.erase(it);
+                syslog(LOG_INFO, "Remove <%s, %s> from interface map (vlan member del)\n",
+                       member.c_str(), vlan.c_str());
+            }
+            continue;
+        }
+
+        // SET: only map the member if this VLAN is a DHCPv6 relay interface whose link-local
+        // address is ready (its sockets/counters are set up). If the VLAN's LLA is not ready yet,
+        // lla_check_callback() will map every current member once it becomes ready.
+        auto cfg = interfaces.find(vlan);
+        if (cfg == interfaces.end()) {
+            continue;
+        }
+        if (!cfg->second.is_lla_ready) {
+            syslog(LOG_INFO, "VLAN %s relay LLA not ready, deferring member %s mapping\n",
+                   vlan.c_str(), member.c_str());
+            continue;
+        }
+        interface_map[member] = vlan;
+        syslog(LOG_INFO, "Add <%s, %s> into interface vlan map (vlan member add)\n",
+               member.c_str(), vlan.c_str());
+    }
+}
+
+/**
+ * @code                    bool check_is_lla_ready(std::string interface)
+ *
+ * @brief                   Check whether link local address appear in an interface
+>>>>>>> 74c0e86 (NOS-7408: dhcp6relay applies VLAN member add/del dynamically (#43))
  *
  * @param vlan              string of vlan name
  *

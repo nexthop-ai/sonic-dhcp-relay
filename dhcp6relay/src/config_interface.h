@@ -72,7 +72,28 @@ void processRelayNotification(std::deque<swss::KeyOpFieldsValuesTuple> &entries,
                               std::shared_ptr<swss::DBConnector> config_db);
 
 /**
+<<<<<<< HEAD
  * @code                    bool check_is_lla_ready(std::string vlan)
+=======
+ * @code                    void processVlanMemberNotification(std::deque<swss::KeyOpFieldsValuesTuple> &entries,
+ *                                                             std::unordered_map<std::string, relay_config> &interfaces)
+ *
+ * @brief                   process VLAN_MEMBER add/del notifications so that DHCPv6 relay picks up
+ *                          member changes on the fly (no dhcp_relay restart required). Updates the
+ *                          global member-port -> VLAN interface_map for VLANs that have relay config
+ *                          and whose link-local address is already up.
+ *
+ * @param entries           queue of VLAN_MEMBER table change entries (key form "<Vlan>|<member>")
+ * @param interfaces        map of relay interface configs keyed by VLAN name
+ *
+ * @return                  none
+ */
+void processVlanMemberNotification(std::deque<swss::KeyOpFieldsValuesTuple> &entries,
+                                   std::unordered_map<std::string, relay_config> &interfaces);
+
+/**
+ * @code                    bool check_is_lla_ready(std::string interface)
+>>>>>>> 74c0e86 (NOS-7408: dhcp6relay applies VLAN member add/del dynamically (#43))
  * 
  * @brief                   Check whether link local address appear in vlan interface
  *

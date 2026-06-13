@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <event.h>
 #include <sstream>
+#include <deque>
 #include <event2/event.h>
 #include <event2/bufferevent.h>
 #include <signal.h>
@@ -1230,11 +1231,45 @@ void dhcp6relay_stop()
 }
 
 /**
+<<<<<<< HEAD
  * @code                loop_relay(std::unordered_map<relay_config> &vlans);
  * 
  * @brief               main loop: configure sockets, create libevent base, start server listener thread
  *  
  * @param vlans         list of vlans retrieved from config_db
+=======
+ * Context shared with the libevent callback that services the VLAN_MEMBER
+ * CONFIG_DB subscription.
+ */
+struct dynamic_config_ctx {
+    std::unordered_map<std::string, relay_config> *interfaces;
+    std::shared_ptr<swss::SubscriberStateTable> vlan_member_sub;
+};
+
+/**
+ * @code                vlan_member_config_callback(evutil_socket_t fd, short event, void *arg);
+ *
+ * @brief               libevent callback: drain VLAN_MEMBER notifications and apply them.
+ */
+void vlan_member_config_callback(evutil_socket_t fd, short event, void *arg) {
+    auto ctx = reinterpret_cast<dynamic_config_ctx *>(arg);
+    ctx->vlan_member_sub->readData();
+    std::deque<swss::KeyOpFieldsValuesTuple> entries;
+    ctx->vlan_member_sub->pops(entries);
+    processVlanMemberNotification(entries, *ctx->interfaces);
+    while (ctx->vlan_member_sub->hasCachedData()) {
+        ctx->vlan_member_sub->pops(entries);
+        processVlanMemberNotification(entries, *ctx->interfaces);
+    }
+}
+
+/**
+ * @code                loop_relay(std::unordered_map<relay_config> &interfaces);
+ *
+ * @brief               main loop: configure sockets, create libevent base, start server listener thread
+ *
+ * @param interfaces    list of interfaces retrieved from config_db
+>>>>>>> 74c0e86 (NOS-7408: dhcp6relay applies VLAN member add/del dynamically (#43))
  */
 void loop_relay(std::unordered_map<std::string, relay_config> &vlans) {
     std::vector<int> sockets;
@@ -1308,6 +1343,21 @@ void loop_relay(std::unordered_map<std::string, relay_config> &vlans) {
     // We set check timer to be executed every 60s, it would case that its first excution be delayed 60s,
     // hence manually invoke it here to immediate execute it
     lla_check_callback(-1, 0, timer_args);
+
+    auto vlan_member_sub = std::make_shared<swss::SubscriberStateTable>(config_db.get(), "VLAN_MEMBER");
+    std::deque<swss::KeyOpFieldsValuesTuple> initial_drain;
+    vlan_member_sub->pops(initial_drain); // drain current VLAN members since they're already mapped
+
+    dynamic_config_ctx cfg_ctx{&interfaces, vlan_member_sub};
+
+    auto vlan_member_event = event_new(base, vlan_member_sub->getFd(), EV_READ|EV_PERSIST,
+                                       vlan_member_config_callback, &cfg_ctx);
+    if (vlan_member_event == NULL) {
+        syslog(LOG_ERR, "libevent: Failed to create VLAN_MEMBER config listen event\n");
+        exit(EXIT_FAILURE);
+    }
+    event_add(vlan_member_event, NULL);
+    syslog(LOG_INFO, "libevent: Added VLAN_MEMBER config listen socket\n");
 
     if(signal_init() == 0 && signal_start() == 0) {
         shutdown_relay();
