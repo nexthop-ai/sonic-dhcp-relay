@@ -248,6 +248,19 @@ void relay_relay_forw(const uint8_t *msg, int32_t len, const ip6_hdr *ip_hdr, re
 void relay_relay_reply(const uint8_t *msg, int32_t len, relay_config *configs);
 
 /**
+ * @code                relay_send_context(relay_config *config, int sock, dhcp_relay_send_context *ctx);
+ *
+ * @brief               populate the structured send-failure context for a send on sock
+ *
+ * @param config        relay interface config
+ * @param sock          socket the send will use (selects the uplink)
+ * @param ctx           context to populate
+ *
+ * @return              none
+ */
+void relay_send_context(relay_config *config, int sock, dhcp_relay_send_context *ctx);
+
+/**
  * @code                struct relay_config *
  *                      get_relay_int_from_relay_msg(const uint8_t *msg, int32_t len,
  *                                                   std::unordered_map<std::string, relay_config> *vlans)

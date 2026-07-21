@@ -642,14 +642,30 @@ void from_client(pcpp::DhcpLayer *dhcp_pkt, relay_config &config) {
     }
 
     for (auto server : config.servers_sock) {
-        const char *server_str = (index < config.servers.size()) ? config.servers[index].c_str() : "<unknown>";
-        if (send_udp(sock, (uint8_t *)dhcp_pkt->getDhcpHeader(), server, dhcp_pkt->getHeaderLen(), src_ip, use_intf_ip_as_src_ip, true)) {
+        const char *downlink = config.phy_interface.empty() ? config.interface.c_str()
+                                                              : config.phy_interface.c_str();
+        const char *vrf = config.vrf.empty() ? "default" : config.vrf.c_str();
+        // Server-side egress is routed; the -si source interface is the only uplink hint.
+        const char *uplink = config.source_interface.empty() ? "unknown"
+                                                              : config.source_interface.c_str();
+        dhcp_relay_send_context ctx = {
+            .protocol = "DHCPv4",
+            .downlink = downlink,
+            .uplink = uplink,
+            .dest_ip = nullptr,  // derive from the server target address (always parseable)
+            .vrf = vrf,
+        };
+        if (send_udp(sock, (uint8_t *)dhcp_pkt->getDhcpHeader(), server, dhcp_pkt->getHeaderLen(),
+                     src_ip, use_intf_ip_as_src_ip, true, &ctx)) {
             SWSS_LOG_INFO("[DHCPV4_RELAY] DHCP packet is sent to configured server: %s, interface: %s",
                    server_str, config.vlan.c_str());
             dhcp_cntr_table.increment_counter(config.vlan, "TX", (int)dhcp_pkt->getMessageType());
         } else {
+<<<<<<< HEAD
             SWSS_LOG_NOTICE("[DHCPV4_RELAY] DHCP packet sending FAILED for configured server: %s, interface: %s",
                    server_str, config.vlan.c_str());
+=======
+>>>>>>> 437c769 (NOS-5546: DHCP relay - structured send-failure logs (#48))
             // increment drop counter
             dhcp_cntr_table.increment_counter(config.vlan, "TX", DHCPv4_MESSAGE_TYPE_DROP);
         }
@@ -812,13 +828,25 @@ void to_client(pcpp::DhcpLayer *dhcp_pkt, std::unordered_map<std::string, relay_
         pad = true;
     }
 
-    if (send_udp(config.client_sock, (uint8_t *)dhcp_pkt->getDhcpHeader(), target_addr, dhcp_pkt->getHeaderLen(), ip_zero, false, pad)) {
+    dhcp_relay_send_context ctx = {
+        .protocol = "DHCPv4",
+        .downlink = config.interface.c_str(),
+        .uplink = "unknown",
+        .dest_ip = nullptr,  // reply path: derive from the client target address
+        .vrf = config.vrf.empty() ? "default" : config.vrf.c_str(),
+    };
+    if (send_udp(config.client_sock, (uint8_t *)dhcp_pkt->getDhcpHeader(), target_addr, dhcp_pkt->getHeaderLen(),
+                 ip_zero, false, pad, &ctx)) {
         SWSS_LOG_INFO("[DHCPV4_RELAY] dhcp relay message is broadcast to client %s from server %s",
                config.vlan.c_str(), src_ip.c_str());
         dhcp_cntr_table.increment_counter(config.vlan, "TX", (int)dhcp_pkt->getMessageType());
     } else {
+<<<<<<< HEAD
         SWSS_LOG_WARN("[DHCPV4_RELAY] Failed to send server reply to client on %s", config.vlan.c_str());
         dhcp_cntr_table.increment_counter(config.vlan, "TX", DHCPv4_MESSAGE_TYPE_DROP);
+=======
+        dhcp_cntr_table.increment_counter(config.interface, "TX", DHCPv4_MESSAGE_TYPE_DROP);
+>>>>>>> 437c769 (NOS-5546: DHCP relay - structured send-failure logs (#48))
     }
 }
 

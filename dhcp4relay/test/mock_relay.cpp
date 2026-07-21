@@ -25,7 +25,7 @@ using namespace swss;
 MOCK_GLOBAL_FUNC1(getifaddrs, int(struct ifaddrs **));
 MOCK_GLOBAL_FUNC1(freeifaddrs, void(struct ifaddrs *));
 MOCK_GLOBAL_FUNC3(write, ssize_t(int, const void*, size_t));
-MOCK_GLOBAL_FUNC7(send_udp, bool(int, uint8_t *, struct sockaddr_in, uint32_t, in_addr, bool, bool));
+MOCK_GLOBAL_FUNC8(send_udp, bool(int, uint8_t *, struct sockaddr_in, uint32_t, in_addr, bool, bool, const dhcp_relay_send_context *));
 
 void encode_relay_option(pcpp::DhcpLayer *dhcp_pkt, relay_config *config);
 void to_client(pcpp::DhcpLayer* dhcp_pkt, std::unordered_map<std::string, relay_config > *vlans,
@@ -924,8 +924,8 @@ TEST(DHCPRelayTest, to_client) {
     struct ifaddrs *mock_ifaddrs = CreateMockIfaddrs("192.168.1.1", "255.255.255.0", "Vlan100", "192.168.1.2", "Ethernet4");
     EXPECT_GLOBAL_CALL(getifaddrs, getifaddrs(_)).WillOnce(DoAll(testing::SetArgPointee<0>(mock_ifaddrs), Return(0)));
     EXPECT_GLOBAL_CALL(freeifaddrs, freeifaddrs(_)).Times(1);
-    EXPECT_GLOBAL_CALL(send_udp, send_udp(_, _, _, _, _, _, _)).WillOnce([]
-		(int sock, uint8_t* hdr, struct sockaddr_in target, uint32_t len, in_addr src_ip, bool use_src_ip, bool pad) {
+    EXPECT_GLOBAL_CALL(send_udp, send_udp(_, _, _, _, _, _, _, _)).WillOnce([]
+		(int sock, uint8_t* hdr, struct sockaddr_in target, uint32_t len, in_addr src_ip, bool use_src_ip, bool pad, const dhcp_relay_send_context *ctx) {
         pcpp::dhcp_header* dhcp_hdr = (pcpp::dhcp_header*)hdr;
         EXPECT_EQ((dhcp_hdr->opCode), 1);
         EXPECT_EQ((dhcp_hdr->hops), 1);
@@ -964,8 +964,8 @@ TEST(DHCPRelayTest, from_client) {
     m_config.host_mac_addr = "12:32:54:24:95:36";
     encode_relay_option(&dhcpLayer, &config);
 
-    EXPECT_GLOBAL_CALL(send_udp, send_udp(_, _, _, _, _, _, _)).WillOnce([]
-		    (int sock, uint8_t* hdr, struct sockaddr_in target, uint32_t len, in_addr src_ip, bool use_src_ip, bool pad) {
+    EXPECT_GLOBAL_CALL(send_udp, send_udp(_, _, _, _, _, _, _, _)).WillOnce([]
+		    (int sock, uint8_t* hdr, struct sockaddr_in target, uint32_t len, in_addr src_ip, bool use_src_ip, bool pad, const dhcp_relay_send_context *ctx) {
         pcpp::dhcp_header* dhcp_hdr = (pcpp::dhcp_header*)hdr;
         EXPECT_EQ((dhcp_hdr->opCode), 0);
         EXPECT_EQ((dhcp_hdr->hops), 1);
@@ -975,7 +975,56 @@ TEST(DHCPRelayTest, from_client) {
     from_client(&dhcpLayer, config);
 }
 
+<<<<<<< HEAD
 static relay_config make_from_client_giaddr_config(bool use_source_interface) {
+=======
+TEST(DHCPRelayTest, from_client_send_context) {
+    pcpp::MacAddress clientMac(std::string("00:0e:86:11:c0:75"));
+    pcpp::DhcpLayer dhcpLayer(pcpp::DHCP_DISCOVER, clientMac);
+    dhcpLayer.getDhcpHeader()->hops = 0;
+    dhcpLayer.getDhcpHeader()->gatewayIpAddress = inet_addr("192.168.1.1");
+    dhcpLayer.getDhcpHeader()->opCode = 0;
+
+    interface_list.push_back("Ethernet12");
+    phy_interface_alias_map["Ethernet12"] = "eth12";
+
+    relay_config config = {};
+    config.phy_interface = "Ethernet12";
+    config.interface = "Vlan10";
+    config.vrf = "Vrf01";
+    config.source_interface = "Loopback0";
+    config.agent_relay_mode = "append";
+    struct sockaddr_in addr = {0};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = inet_addr("192.168.20.100");
+    config.servers_sock = {addr};
+    config.servers = {"192.168.20.100"};
+    config.link_address.sin_addr.s_addr = inet_addr("192.168.10.10");
+    config.link_address_netmask.sin_addr.s_addr = inet_addr("255.255.255.0");
+
+    m_config.host_mac_addr = "12:32:54:24:95:36";
+    encode_relay_option(&dhcpLayer, &config);
+
+    EXPECT_GLOBAL_CALL(send_udp, send_udp(_, _, _, _, _, _, _, _)).WillOnce([]
+		    (int sock, uint8_t* hdr, struct sockaddr_in target, uint32_t len, in_addr src_ip, bool use_src_ip, bool pad, const dhcp_relay_send_context *ctx) {
+        EXPECT_STREQ(ctx->protocol, "DHCPv4");
+        EXPECT_STREQ(ctx->downlink, "Ethernet12");           // client-facing physical port
+        EXPECT_STREQ(ctx->uplink, "Loopback0");              // -si source interface
+        EXPECT_EQ(ctx->dest_ip, nullptr);                    // deferred to the server target
+        EXPECT_EQ(target.sin_addr.s_addr, inet_addr("192.168.20.100"));  // server target
+        EXPECT_STREQ(ctx->vrf, "Vrf01");
+        return true;
+    });
+    from_client(&dhcpLayer, config);
+}
+
+TEST(DHCPRelayTest, circuit_id_format_interface_ip) {
+    std::shared_ptr<swss::DBConnector> config_db = std::make_shared<swss::DBConnector> ("CONFIG_DB", 0);
+    pcpp::MacAddress clientMac(std::string("00:0e:86:11:c0:75"));
+    pcpp::DhcpLayer dhcpLayer(pcpp::DHCP_DISCOVER, clientMac);
+    dhcpLayer.getDhcpHeader()->hops = 1;
+
+>>>>>>> 437c769 (NOS-5546: DHCP relay - structured send-failure logs (#48))
     interface_list.push_back("Ethernet12");
     phy_interface_alias_map["Ethernet12"] = "eth12";
 
@@ -1041,8 +1090,47 @@ TEST(DHCPRelayTest, from_client_dual_tor_dhcp_uses_source_interface_giaddr) {
     verify_from_client_giaddr(true, true, "10.1.0.32");
 }
 
+<<<<<<< HEAD
 TEST(DHCPRelayTest, from_client_dual_tor_bootp_uses_vlan_giaddr) {
     verify_from_client_giaddr(false, true, "192.168.10.10");
+=======
+    pcpp::UdpLayer udpLayer((uint16_t)67, (uint16_t)67);
+
+    pcpp::MacAddress clientMac(std::string("00:0e:86:11:c0:75"));
+    pcpp::DhcpLayer dhcpLayer(pcpp::DHCP_OFFER, clientMac);
+    dhcpLayer.getDhcpHeader()->hops = 1;
+    dhcpLayer.getDhcpHeader()->gatewayIpAddress = inet_addr("192.168.10.10");
+
+    /* Add custom circuit ID to the packet */
+    uint8_t buf[256] = {0};
+    std::string custom_circuit_id = "192.168.10.10";
+    auto offset = encode_tlv(buf, OPTION82_SUBOPT_CIRCUIT_ID, custom_circuit_id.length(),
+                             (uint8_t *)custom_circuit_id.c_str());
+    dhcpLayer.addOption(pcpp::DhcpOptionBuilder(pcpp::DHCPOPT_DHCP_AGENT_OPTIONS, buf, offset));
+
+    relay_config config = {};
+    config.interface = "Vlan10";
+    config.link_address.sin_addr.s_addr = inet_addr("192.168.10.10");
+    vlans["Vlan10"] = config;
+
+    /* Populate the circuit_id_vlan_map to simulate the mapping created during from_client */
+    circuit_id_interface_map[custom_circuit_id] = "Vlan10";
+
+    struct ifaddrs *mock_ifaddrs = CreateMockIfaddrs("192.168.10.10", "255.255.255.0", "Vlan10", "192.168.1.2", "Ethernet4");
+    EXPECT_GLOBAL_CALL(getifaddrs, getifaddrs(_)).WillOnce(DoAll(testing::SetArgPointee<0>(mock_ifaddrs), Return(0)));
+    EXPECT_GLOBAL_CALL(freeifaddrs, freeifaddrs(_)).Times(1);
+
+    EXPECT_GLOBAL_CALL(send_udp, send_udp(_,_,_,_,_,_,_,_)).Times(1).WillOnce([](int sock, uint8_t *buffer,
+                                                                                 struct sockaddr_in server,
+                                                                                 uint32_t n, in_addr giaddr,
+                                                                                 bool is_broadcast,
+                                                                                 bool is_option82_exist,
+                                                                                 const dhcp_relay_send_context *ctx) {
+        return true;
+    });
+    to_client(&dhcpLayer, &vlans, "172.22.178.234");
+    FreeMockIfaddrs(mock_ifaddrs);
+>>>>>>> 437c769 (NOS-5546: DHCP relay - structured send-failure logs (#48))
 }
 
 /* Helper: build a relay-of-relay packet (giaddr already set) with a pre-existing Option 82. */
@@ -1078,8 +1166,8 @@ TEST(DHCPRelayTest, from_client_relay_of_relay_append) {
     dhcpLayer.getDhcpHeader()->gatewayIpAddress = inet_addr("192.168.1.1");
     encode_relay_option(&dhcpLayer, &config);
 
-    EXPECT_GLOBAL_CALL(send_udp, send_udp(_, _, _, _, _, _, _)).WillOnce([]
-            (int, uint8_t* hdr, struct sockaddr_in, uint32_t, in_addr, bool, bool) {
+    EXPECT_GLOBAL_CALL(send_udp, send_udp(_, _, _, _, _, _, _, _)).WillOnce([]
+            (int, uint8_t* hdr, struct sockaddr_in, uint32_t, in_addr, bool, bool, const dhcp_relay_send_context *) {
         pcpp::dhcp_header* dhcp_hdr = (pcpp::dhcp_header*)hdr;
         EXPECT_EQ(dhcp_hdr->hops, 1);
         EXPECT_EQ(dhcp_hdr->gatewayIpAddress, inet_addr("192.168.1.1"));
@@ -1098,8 +1186,8 @@ TEST(DHCPRelayTest, from_client_relay_of_relay_replace) {
     dhcpLayer.getDhcpHeader()->gatewayIpAddress = inet_addr("192.168.1.1");
     encode_relay_option(&dhcpLayer, &config);
 
-    EXPECT_GLOBAL_CALL(send_udp, send_udp(_, _, _, _, _, _, _)).WillOnce([]
-            (int, uint8_t* hdr, struct sockaddr_in, uint32_t, in_addr, bool, bool) {
+    EXPECT_GLOBAL_CALL(send_udp, send_udp(_, _, _, _, _, _, _, _)).WillOnce([]
+            (int, uint8_t* hdr, struct sockaddr_in, uint32_t, in_addr, bool, bool, const dhcp_relay_send_context *) {
         pcpp::dhcp_header* dhcp_hdr = (pcpp::dhcp_header*)hdr;
         EXPECT_EQ(dhcp_hdr->hops, 1);
         EXPECT_EQ(dhcp_hdr->gatewayIpAddress, inet_addr("192.168.1.1"));
@@ -1118,8 +1206,8 @@ TEST(DHCPRelayTest, from_client_relay_of_relay_forward) {
     dhcpLayer.getDhcpHeader()->gatewayIpAddress = inet_addr("192.168.1.1");
     encode_relay_option(&dhcpLayer, &config);
 
-    EXPECT_GLOBAL_CALL(send_udp, send_udp(_, _, _, _, _, _, _)).WillOnce([]
-            (int, uint8_t* hdr, struct sockaddr_in, uint32_t, in_addr, bool, bool) {
+    EXPECT_GLOBAL_CALL(send_udp, send_udp(_, _, _, _, _, _, _, _)).WillOnce([]
+            (int, uint8_t* hdr, struct sockaddr_in, uint32_t, in_addr, bool, bool, const dhcp_relay_send_context *) {
         pcpp::dhcp_header* dhcp_hdr = (pcpp::dhcp_header*)hdr;
         EXPECT_EQ(dhcp_hdr->hops, 1);
         EXPECT_EQ(dhcp_hdr->gatewayIpAddress, inet_addr("192.168.1.1"));
@@ -1138,6 +1226,6 @@ TEST(DHCPRelayTest, from_client_relay_of_relay_discard) {
     dhcpLayer.getDhcpHeader()->gatewayIpAddress = inet_addr("192.168.1.1");
     encode_relay_option(&dhcpLayer, &config);
 
-    EXPECT_GLOBAL_CALL(send_udp, send_udp(_, _, _, _, _, _, _)).Times(0);
+    EXPECT_GLOBAL_CALL(send_udp, send_udp(_, _, _, _, _, _, _, _)).Times(0);
     from_client(&dhcpLayer, config);
 }

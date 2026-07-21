@@ -219,9 +219,34 @@ TEST(helper, send_udp)
   target.sin6_scope_id = 0; 
   inet_pton(AF_INET6, "::1", &target.sin6_addr);
   uint32_t len = 10;
-  send_udp(sock, buffer, target, len);
+  send_udp(sock, buffer, target, len, nullptr);
   EXPECT_EQ(1, sendUdpCount);
   sendUdpCount = 0;
+}
+
+TEST(helper, relay_send_context)
+{
+  struct relay_config config{};
+  config.interface = "Vlan1000";
+  config.gua_sock = 10;
+  config.lla_sock = 11;
+  config.lo_sock = 12;
+
+  dhcp_relay_send_context ctx = {};
+
+  // Server-facing send via the gua/lla socket: uplink is the vlan interface.
+  relay_send_context(&config, config.gua_sock, &ctx);
+  EXPECT_STREQ(ctx.protocol, "DHCPv6");
+  EXPECT_STREQ(ctx.downlink, "Vlan1000");
+  EXPECT_STREQ(ctx.uplink, "Vlan1000");
+  EXPECT_EQ(ctx.dest_ip, nullptr);        // derived from the target in the sender
+  EXPECT_STREQ(ctx.vrf, "default");
+
+  // Dual-ToR loopback socket: uplink is "lo".
+  dual_tor_sock = true;
+  relay_send_context(&config, config.lo_sock, &ctx);
+  EXPECT_STREQ(ctx.uplink, "lo");
+  dual_tor_sock = false;
 }
 
 TEST(prepareConfig, prepare_relay_config)

@@ -658,6 +658,15 @@ int prepare_vlan_sockets(int &gua_sock, int &lla_sock, relay_config &config) {
     return 0;
 }
 
+void relay_send_context(relay_config *config, int sock, dhcp_relay_send_context *ctx)
+{
+    ctx->protocol = "DHCPv6";
+    ctx->downlink = config->interface.c_str();
+    ctx->uplink = dual_tor_sock && sock == config->lo_sock ? "lo" : config->interface.c_str();
+    ctx->dest_ip = nullptr;  // derive from the target address in the sender
+    ctx->vrf = "default";    // dhcp6relay has no VRF concept; default netns only
+}
+
 
 /**
  * @code                 relay_client(int sock, const uint8_t *msg, uint16_t len, ip6_hdr *ip_hdr, const ether_header *ether_hdr, relay_config *config);
@@ -723,7 +732,9 @@ void relay_client(const uint8_t *msg, uint16_t len, const ip6_hdr *ip_hdr, const
         sock = config->lo_sock;
     }
     for(auto server: config->servers_sock) {
-        if(send_udp(sock, relay_pkt, server, relay_pkt_len)) {
+        dhcp_relay_send_context ctx = {};
+        relay_send_context(config, sock, &ctx);
+        if(send_udp(sock, relay_pkt, server, relay_pkt_len, &ctx)) {
             increase_counter(config->state_db, config->interface, DHCPv6_MESSAGE_TYPE_RELAY_FORW);
         }
     }
@@ -784,7 +795,9 @@ void relay_relay_forw(const uint8_t *msg, int32_t len, const ip6_hdr *ip_hdr, re
         sock = config->lo_sock;
     }
     for(auto server: config->servers_sock) {
-        if(send_udp(sock, send_buffer, server, send_buffer_len)) {
+        dhcp_relay_send_context ctx = {};
+        relay_send_context(config, sock, &ctx);
+        if(send_udp(sock, send_buffer, server, send_buffer_len, &ctx)) {
             increase_counter(config->state_db, config->interface, DHCPv6_MESSAGE_TYPE_RELAY_FORW);
         }
     }
@@ -837,7 +850,9 @@ void relay_relay_forw(const uint8_t *msg, int32_t len, const ip6_hdr *ip_hdr, re
         target_addr.sin6_port = htons(RELAY_PORT);
     }
 
-    if(send_udp(sock, dhcpv6, target_addr, length)) {
+    dhcp_relay_send_context ctx = {};
+    relay_send_context(config, sock, &ctx);
+    if(send_udp(sock, dhcpv6, target_addr, length, &ctx)) {
         increase_counter(config->state_db, config->interface, msg_type);
     }
 }

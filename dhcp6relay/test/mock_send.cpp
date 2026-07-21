@@ -7,7 +7,9 @@ int last_used_sock;
 sockaddr_in6 last_target;
 int sendUdpCount;
 
-bool send_udp(int sock, uint8_t *buffer, struct sockaddr_in6 target, uint32_t n) {
+bool send_udp(int sock, uint8_t *buffer, struct sockaddr_in6 target, uint32_t n,
+              const dhcp_relay_send_context *ctx) {
+    (void)ctx;
     last_used_sock = sock;
     valid_byte_count = n;
     memcpy(sender_buffer, buffer, n);
